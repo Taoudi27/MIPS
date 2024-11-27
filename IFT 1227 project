@@ -1,0 +1,342 @@
+# Devoir 3 - Architecture de l'ordinateur 1
+# Aya Dair et Taoudi Bensouda 
+
+# IMPORTANT: 
+# le code pour Trier et StrCmp est en commentaire, car il
+# s'assemble avec des erreurs, le reste du code compile et affiche exactement ce qui est demande.
+.data
+
+prompt:     .asciiz "Entrez un texte de 300 caractères maximum: "    # Message de saisie affiché à l'utilisateur
+texte:      .space 300                    # Tampon réservé pour stocker l'entrée utilisateur (300 octets maximum)
+filtré:     .space 300                    # Tampon pour stocker le texte filtré (caractères autorisés uniquement)
+limiteCaractere: .word 150                # Nombre maximal de caractères autorisés
+messageErreur: .asciiz "\n\n -1 \n"       # Message d'erreur en cas de dépassement de la limite
+messageNbCaracteres: .asciiz "\nNombre de caractères saisis: "  # Message pour afficher le nombre de caractères saisis
+newline:    .asciiz "\n"                  # Caractère de nouvelle ligne pour l'affichage
+space:      .asciiz " "                   # Caractère espace pour séparer les mots affichés
+finTableau: .word -1                      # Marqueur pour indiquer la fin du tableau contenant les adresses des mots
+.align 2
+tabMots:    .space 1200                   # Tableau pour stocker les adresses des mots (jusqu'à 300 mots)
+
+.text
+.globl main
+main:
+    # Affiche le message pour demander un texte à l'utilisateur
+    li $v0, 4                             
+    la $a0, prompt                        
+    syscall
+
+    # Appel de la fonction Saisir pour lire l'entrée utilisateur et compter les caractères saisis
+    jal Saisir                            
+    move $t0, $v0                         # Stocke le résultat (nombre de caractères ou -1 en cas d'erreur)
+
+    # Vérifie si une erreur s'est produite (valeur -1 retournée par Saisir)
+    li $t1, -1                             
+    beq $t0, $t1, afficherErreur           # Si $t0 == -1, afficher le message d'erreur et quitter
+
+    # Affiche le message indiquant le nombre de caractères saisis
+    li $v0, 4
+    la $a0, messageNbCaracteres
+    syscall
+
+    # Affiche le nombre de caractères saisis
+    li $v0, 1
+    move $a0, $t0
+    syscall
+
+    # Ajoute une nouvelle ligne pour l'affichage
+    li $v0, 4
+    la $a0, newline
+    syscall
+    
+    # Une autre nouvelle ligne pour séparer visuellement les sections
+    li $v0, 4
+    la $a0, newline
+    syscall
+
+    # Appelle la fonction Isalpha pour filtrer le texte et ne garder que les lettres et espaces
+    la $a0, texte                         # Pointeur vers le texte brut
+    la $a1, filtré                        # Pointeur vers le tampon du texte filtré
+    jal Isalpha
+
+    # Appelle la fonction DecMots pour séparer le texte filtré en mots
+    la $a0, filtré                        # Pointeur vers le texte filtré
+    la $a1, tabMots                       # Pointeur vers le tableau où stocker les adresses des mots
+    jal DecMots
+
+    # Appelle la fonction Afficher pour afficher les mots extraits
+    jal Afficher
+    
+    # Trie les mots avec la fonction sort
+   # la $a0, tabMots      # Pointeur vers le tableau des mots
+   # jal Trier
+
+    # Affiche les mots après le tri
+   # jal Afficher
+
+    # Sort du programme
+    li $v0, 10                             
+    syscall
+
+# Affiche un message d'erreur si la limite de caractères est dépassée
+afficherErreur:
+    li $v0, 4                              # Appelle la fonction print string
+    la $a0, messageErreur                  # Charge l'adresse du message d'erreur
+    syscall
+
+    # Quitte le programme après avoir affiché l'erreur
+    li $v0, 10                             
+    syscall
+
+# Fonction Saisir : Lit une entrée utilisateur et retourne le nombre de caractères saisis ou -1 si la limite est dépassée
+Saisir:
+    li $t1, 0                              # Initialise l'index des caractères à 0
+    li $t5, 0                              # Initialise le compteur de caractères à 0
+
+    # Lit l'entrée utilisateur (chaîne de caractères)
+    li $v0, 8                              # Appelle la fonction "read string"
+    la $a0, texte                          # Adresse du tampon où stocker la chaîne
+    li $a1, 300                            # Limite maximale de caractères à lire
+    syscall
+
+boucleComptage:
+    lb $t3, texte($t1)                     # Charge le caractère courant
+    beqz $t3, verifierLimite               # Si le caractère est null terminator, arrêter la boucle
+
+    addi $t5, $t5, 1                       # Incrémente le compteur de caractères
+    addi $t1, $t1, 1                       # Passe au caractère suivant
+    j boucleComptage                       # Répète la boucle
+
+verifierLimite:
+    subi $t1, $t1, 1                       # Vérifie si le dernier caractère est une nouvelle ligne
+    lb $t3, texte($t1)                     # Charge le dernier caractère
+    li $t4, 10                             # Code ASCII de '\n'
+    beq $t3, $t4, ajusterComptage          # Si c'est une nouvelle ligne, ajuste le comptage
+
+ajusterComptage:
+    subi $t5, $t5, 1                       # Réduit le compteur de 1 (retirer le '\n')
+
+    # Compare le nombre de caractères avec la limite maximale autorisée
+    lw $t4, limiteCaractere                
+    bgt $t5, $t4, retournerErreur          # Si dépassement, retourne une erreur
+
+    move $v0, $t5                          # Retourne le nombre de caractères saisis
+    jr $ra
+
+retournerErreur:
+    li $v0, -1                             # Retourne -1 en cas d'erreur
+    jr $ra
+
+# Fonction Isalpha : Filtre le texte pour ne conserver que les lettres et les espaces
+Isalpha:
+    move $t0, $a0                          # Pointeur vers le texte brut
+    move $t1, $a1                          # Pointeur vers le texte filtré
+
+loop_filtre:
+    lb $t2, 0($t0)                         # Charge le caractère courant
+    beq $t2, $zero, fin_filtre             # Si null terminator, termine la boucle
+
+    # Vérifie si le caractère est une lettre majuscule (A-Z)
+    li $t3, 65                             # Code ASCII de 'A'
+    li $t4, 90                             # Code ASCII de 'Z'
+    blt $t2, $t3, check_minuscule          # Si inférieur à 'A', vérifier les minuscules
+    bgt $t2, $t4, check_minuscule          # Si supérieur à 'Z', vérifier les minuscules
+    sb $t2, 0($t1)                         # Stocke le caractère majuscule dans le texte filtré
+    addi $t1, $t1, 1                       # Passe à l'emplacement suivant dans le texte filtré
+    j Prochain_char                            # Passe au caractère suivant
+
+# Vérifie si le caractère est une lettre minuscule (a-z)
+check_minuscule:
+    li $t3, 97                             # Code ASCII de 'a'
+    li $t4, 122                            # Code ASCII de 'z'
+    blt $t2, $t3, check_space              # Si inférieur à 'a', vérifier les espaces
+    bgt $t2, $t4, check_space              # Si supérieur à 'z', vérifier les espaces
+    sb $t2, 0($t1)                         # Stocke le caractère minuscule dans le texte filtré
+    addi $t1, $t1, 1                       # Passe à l'emplacement suivant dans le texte filtré
+    j Prochain_char                            # Passe au caractère suivant
+
+# Vérifie si le caractère est un espace
+check_space:
+    li $t3, 32                             # Code ASCII de l'espace
+    beq $t2, $t3, store_space              # Si c'est un espace, le stocker dans le texte filtré
+
+    # Si le caractère n'est ni une lettre ni un espace, remplacer par un espace
+    li $t3, 32                             
+    sb $t3, 0($t1)                         
+    addi $t1, $t1, 1                       
+    j Prochain_char                            # Passe au caractère suivant
+
+store_space:
+    sb $t2, 0($t1)                         # Stocke l'espace dans le texte filtré
+    addi $t1, $t1, 1
+
+# Passe au caractère suivant dans le texte brut
+Prochain_char:
+    addi $t0, $t0, 1
+    j loop_filtre
+
+# Termine le filtrage en ajoutant un null terminator
+fin_filtre:
+    sb $zero, 0($t1)
+    jr $ra
+
+# Fonction strCmp : Compare deux chaînes de caractères
+#strCmp:
+  #  move $t0, $a0    # Pointeur vers la première chaîne
+  #  move $t1, $a1    # Pointeur vers la seconde chaîne
+
+#compare_boucle:
+  #  lb $t2, 0($t0)   # Charge le caractère courant de la première chaîne
+  #  lb $t3, 0($t1)   # Charge le caractère courant de la seconde chaîne
+  #  beq $t2, $zero, check_deuxieme_null  # Si fin de la première chaîne, vérifier la seconde
+  #  beq $t3, $zero, return_plusGrand     # Si fin de la seconde chaîne, la première est plus grande
+
+  #  sub $t4, $t2, $t3 # Compare les caractères
+  #  beq $t4, $zero, return_resultat # Si les caractères sont différents, retourne le résultat
+   # addi $t0, $t0, 1   # Passe au caractère suivant de la première chaîne
+  #  addi $t1, $t1, 1   # Passe au caractère suivant de la seconde chaîne
+   # j compare_boucle     # Continue la comparaison
+
+#check_deuxieme_null:
+ #   beq $t3, $zero, return_egale  # Si les deux chaînes sont terminées, elles sont égales
+  #  j return_plusPetit                 # Sinon, la première est plus petite
+
+#return_resultat:
+ #   bgtz $t4, return_plusGrand  # Si $t4 > 0, la première chaîne est plus grande
+  #  j return_plusPetit             # Sinon, elle est plus petite
+
+#return_plusPetit:
+  #  li $v0, -1
+  #  jr $ra
+
+#return_egale:
+  #  li $v0, 0
+   # jr $ra
+
+#return_plusGrand:
+   # li $v0, 1
+   # jr $ra
+
+
+# Fonction DecMots : Séparer le texte filtré en mots et stocker leurs adresses dans un tableau
+DecMots:
+    move $t0, $a0                          # Pointeur vers le texte filtré
+    move $t1, $a1                          # Pointeur vers le tableau des adresses des mots
+
+LoopDec:
+    lb $t2, 0($t0)                         # Charge le caractère courant
+    beqz $t2, FinDu_split                  # Si null terminator, fin de la boucle
+
+    li $t3, 32                             # Code ASCII de l'espace
+    beq $t2, $t3, skip_space               # Ignore les espaces au début
+
+    # Stocke l'adresse du début du mot dans le tableau
+    sw $t0, 0($t1)
+    addi $t1, $t1, 4                       # Avance au prochain emplacement du tableau
+
+Trouver_fin_mot:
+    lb $t2, 0($t0)                         # Charge le caractère courant
+    beqz $t2, save_mot                     # Si null terminator, sauvegarde le mot
+    beq $t2, $t3, save_mot                 # Si espace, sauvegarde le mot
+    addi $t0, $t0, 1                       # Passe au caractère suivant
+    j Trouver_fin_mot                      # Continue à chercher la fin du mot
+
+# Termine un mot en remplaçant son espace ou null terminator par un null terminator
+save_mot:
+    sb $zero, 0($t0)
+    addi $t0, $t0, 1                       # Passe au caractère suivant après le mot
+    j LoopDec                              
+
+# Ignore les espaces supplémentaires
+skip_space:
+    addi $t0, $t0, 1                       # Passe au caractère suivant
+    j LoopDec                              
+
+# Marque la fin du tableau avec -1
+FinDu_split:
+    li $t2, -1
+    sw $t2, 0($t1)
+    jr $ra
+
+# Fonction Trier : Trie les mots dans tabMots en ordre alphabétique
+#Trier:
+  #  la $t0, tabMots      # Pointeur vers le tableau des mots
+  #  li $t1, 0            # Indice i (boucle extérieure)
+
+#tri_outer_boucle:
+  #  lw $t2, 0($t0)       # Charge l'adresse du mot courant
+  #  li $t3, -1           # Vérifie la fin du tableau
+   # beq $t2, $t3, tri_fini # Si fin du tableau, le tri est terminé
+
+ #   la $t4, tabMots      # Réinitialise le pointeur pour j (boucle intérieure)
+  #  add $t4, $t4, $t1    # Décale pour commencer à l'indice i+1
+
+#tri_inner_boucle:
+  #  lw $t5, 0($t4)       # Charge l'adresse du mot suivant
+  #  beq $t5, $t3, tri_outer_next # Si fin du tableau, passe à l'itération suivante
+
+    # Compare les deux mots
+   # move $a0, $t2        # Première chaîne
+  #  move $a1, $t5        # Seconde chaîne
+   # jal strCmp           # Appelle la fonction de comparaison
+  #  li $t6, 1
+  #  bne $v0, $t6, tri_inner_next # Si $v0 != 1 (premier > second), continue
+
+    # Effectue un échange si nécessaire
+ #   sw $t5, 0($t0)       # Échange le mot courant avec le suivant
+  #  sw $t2, 0($t4)
+  #  move $t2, $t5        # Met à jour le mot courant
+
+#tri_inner_next:
+  #  addi $t4, $t4, 4     # Passe au mot suivant
+  #  j tri_inner_boucle    # Continue la boucle intérieure
+
+#tri_outer_next:
+ #   addi $t0, $t0, 4     # Passe au mot suivant dans la boucle extérieure
+  #  j tri_outer_boucle    # Continue la boucle extérieure
+
+#tri_fini:
+  #  jr $ra
+
+
+# Fonction Afficher : Affiche les mots extraits du texte, 4 mots par ligne
+Afficher:
+    la $t0, tabMots                        # Pointeur vers le tableau contenant les adresses des mots
+    li $t3, 0                              # Compteur pour afficher 4 mots par ligne
+
+print_loop:
+    lw $t1, 0($t0)                         # Charge l'adresse du mot courant
+    li $t2, -1                             # Vérifie si c'est la fin du tableau
+    beq $t1, $t2, FinDu_print              # Si fin du tableau, termine l'affichage
+
+    move $a0, $t1                          # Charge l'adresse du mot à afficher
+    li $v0, 4                              # Appelle la fonction print string
+    syscall
+
+    # Affiche un espace entre les mots
+    li $v0, 4
+    la $a0, space
+    syscall
+
+    # Compte les mots affichés
+    addi $t3, $t3, 1
+    li $t4, 4                              # Affiche une nouvelle ligne après 4 mots
+    rem $t5, $t3, $t4
+    bnez $t5, next_mot                     # Si ce n'est pas le 4e mot, continue
+
+    # Affiche une nouvelle ligne
+    li $v0, 4
+    la $a0, newline
+    syscall
+
+# Passe au mot suivant
+next_mot:
+    addi $t0, $t0, 4                       # Passe à l'adresse du mot suivant dans le tableau
+    j print_loop                           # Continue l'affichage
+
+# Fin de l'affichage
+FinDu_print:
+    li $v0, 4
+    la $a0, newline                        # Ajoute une nouvelle ligne à la fin
+    syscall
+    jr $ra
